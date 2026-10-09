@@ -17,7 +17,11 @@
     "dev:server": "tsx watch src/server/index.ts",
     "dev:web": "vite",
     "start": "node dist/server/index.js",
-    "migrate": "tsx src/server/migrate.ts"
+    "migrate": "tsx src/server/migrate.ts",
+    "seed:dev": "tsx src/server/seed-dev.ts",
+    "import:legacy": "tsx src/server/import-legacy.ts",
+    "cli": "tsx src/server/cli.ts",
+    "shots": "node tools/shots/kiosk.mjs && node tools/shots/my.mjs && node tools/shots/admin.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
