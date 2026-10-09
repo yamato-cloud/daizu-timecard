@@ -209,10 +209,11 @@ export async function clockOut(input: ClockOutInput, actor: Actor, nowMs = Date.
       clockOutDate = ov ? addDays(row.work_date, 1) : row.work_date;
     }
     const loc = row.location_code ? await getLocation(row.location_code) : null;
-    const { calc, reasons, warning_labels } = await computeForSave({ work_date: row.work_date, clock_in: clockIn, clock_out: clockOut, clock_out_date: clockOutDate, loc, input });
+    if (!isValidDate(clockOutDate)) throw badRequest('退勤日の形式が不正です', 'BAD_DATE', 'clock_out_date');
     const clockInAt = new Date(jstToMs(row.work_date, clockIn)!);
     const clockOutAt = new Date(jstToMs(clockOutDate, clockOut)!);
-    if (clockOutAt.getTime() > nowMs + 5 * 60e3) throw badRequest('未来の時刻では退勤できません', 'FUTURE', 'clock_out');
+    if (clockOutAt.getTime() > nowMs + 5 * 60e3) throw badRequest('未来の時刻では退勤できません。退勤時刻を確認してください', 'FUTURE', 'clock_out');
+    const { calc, reasons, warning_labels } = await computeForSave({ work_date: row.work_date, clock_in: clockIn, clock_out: clockOut, clock_out_date: clockOutDate, loc, input });
     const rc = reasonCols(reasons);
     const before = presentRow(row);
     const updated = await one<AttendanceRow>(
@@ -305,10 +306,11 @@ export async function selfEditRecord(id: string, input: SelfEditInput, actor: Ac
       if (!loc) throw badRequest('事業所が見つかりません', 'BAD_LOCATION', 'location_code');
       locCols = { location_code: loc.location_code, location_name: loc.location_name, department: loc.department };
     }
-    const { calc, reasons, warning_labels } = await computeForSave({ work_date: workDate, clock_in: input.clock_in, clock_out: clockOut, clock_out_date: clockOutDate, loc, input });
+    if (!isValidDate(clockOutDate)) throw badRequest('退勤日の形式が不正です', 'BAD_DATE', 'clock_out_date');
     const clockInAt = new Date(jstToMs(workDate, input.clock_in)!);
     const clockOutAt = new Date(jstToMs(clockOutDate, clockOut)!);
     if (clockOutAt.getTime() > nowMs + 5 * 60e3) throw badRequest('未来の時刻は登録できません', 'FUTURE', 'clock_out');
+    const { calc, reasons, warning_labels } = await computeForSave({ work_date: workDate, clock_in: input.clock_in, clock_out: clockOut, clock_out_date: clockOutDate, loc, input });
     const rc = reasonCols(reasons);
     const before = presentRow(row);
     const updated = await one<AttendanceRow>(
@@ -352,10 +354,11 @@ export async function addRecord(input: AddRecordInput, actor: Actor, nowMs = Dat
   if (toMin(clockOut) === null) throw badRequest('退勤時刻を入力してください', 'BAD_TIME', 'clock_out');
   let clockOutDate = String(input.clock_out_date ?? '').trim();
   if (!clockOutDate) clockOutDate = toMin(clockOut)! < toMin(input.clock_in)! ? addDays(input.work_date, 1) : input.work_date;
-  const { calc, reasons, warning_labels } = await computeForSave({ work_date: input.work_date, clock_in: input.clock_in, clock_out: clockOut, clock_out_date: clockOutDate, loc, input });
+  if (!isValidDate(clockOutDate)) throw badRequest('退勤日の形式が不正です', 'BAD_DATE', 'clock_out_date');
   const clockInAt = new Date(jstToMs(input.work_date, input.clock_in)!);
   const clockOutAt = new Date(jstToMs(clockOutDate, clockOut)!);
   if (clockOutAt.getTime() > nowMs + 5 * 60e3) throw badRequest('未来の時刻は登録できません', 'FUTURE', 'clock_out');
+  const { calc, reasons, warning_labels } = await computeForSave({ work_date: input.work_date, clock_in: input.clock_in, clock_out: clockOut, clock_out_date: clockOutDate, loc, input });
   const rc = reasonCols(reasons);
   return tx(async (c) => {
     const row = await one<AttendanceRow>(

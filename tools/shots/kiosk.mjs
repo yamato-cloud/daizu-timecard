@@ -1,0 +1,61 @@
+import { chromium } from 'playwright';
+import { execSync } from 'node:child_process';
+execSync(`psql postgres://daizu:daizu@localhost/daizu_timecard -c "DELETE FROM attendance" -c "DELETE FROM sessions"`, { stdio: 'ignore' });
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'ja-JP' });
+const page = await ctx.newPage();
+const errors = [];
+page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+const shot = (n) => page.screenshot({ path: `/tmp/shots/${n}.png`, fullPage: true });
+await page.goto('http://localhost:3000/');
+await page.waitForSelector('.keypad');
+await shot('01-gate');
+for (const d of ['7','7','7','7']) await page.click(`.keypad button:text-is("${d}")`);
+await page.waitForSelector('text=この端末の事業所を選んでください');
+await shot('02-location');
+await page.click('text=GH行田');
+await page.waitForSelector('#working-list .state, #working-list .list');
+await page.waitForTimeout(500);
+await shot('03-main');
+// 出勤
+await page.click('text=出勤する');
+await page.waitForSelector('input[placeholder="名前・よみがなで検索"]');
+await shot('04-clockin-select');
+await page.click('.item:has-text("山田太郎")');
+await page.waitForSelector('.keypad');
+await shot('05-clockin-pin');
+for (const d of ['0','0','0','0']) await page.click(`.sheet .keypad button:text-is("${d}")`);
+await page.waitForSelector('.toast.success');
+await page.waitForTimeout(800);
+await shot('06-after-clockin');
+// 退勤ボタン → 一覧へスクロール
+await page.click('text=退勤する');
+await page.waitForTimeout(600);
+await shot('07-after-out-btn');
+await page.click('#working-list .item:has-text("山田太郎")');
+await page.waitForSelector('.shift-form');
+await shot('08-clockout-form');
+// 退勤時刻を 18:30 に（出勤は今なので未来 → エラーの表示確認）
+// 退勤時刻＝出勤1分後 → 実働1分で「勤務極短」の警告 → 理由必須（422）
+const ci = await page.locator('.shift-form strong').first().textContent();
+const [h, mi] = ci.replace('出勤 ', '').split(':').map(Number);
+const co = `${String(h + Math.floor((mi + 1) / 60)).padStart(2, '0')}:${String((mi + 1) % 60).padStart(2, '0')}`;
+await page.fill('input[name="clock_out"]', co);
+await page.click('.shift-form button[type=submit]');
+await page.waitForSelector('.warning-box');
+await shot('09-clockout-warning');
+await page.fill('textarea[name="reason_anomaly"]', '体調不良で早退');
+await page.click('.shift-form button[type=submit]');
+await page.waitForSelector('.toast.success');
+await page.waitForTimeout(800);
+await shot('10-after-clockout');
+// 読み込み失敗の見え方（API を一時的に 500 にして確認）
+await page.route('**/api/kiosk/working**', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'サーバーでエラーが起きました（テスト）', code: 'INTERNAL' }) }));
+await page.click('text=更新');
+await page.waitForSelector('.state.error');
+await shot('11-working-error');
+await page.unroute('**/api/kiosk/working**');
+const bodyW = await page.evaluate(() => document.documentElement.scrollWidth);
+console.log('scrollWidth', bodyW, 'errors', errors);
+await browser.close();
