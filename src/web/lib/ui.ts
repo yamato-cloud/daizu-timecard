@@ -97,3 +97,12 @@ export function nowHHMM(): string { const d = new Date(); return `${pad2(d.getHo
 export function addDaysYmd(ymd: string, n: number): string { const [y, m, d] = ymd.split('-').map(Number); const dt = new Date(y!, m! - 1, d! + n); return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`; }
 export function minToHm(min: number | null | undefined): string { if (min === null || min === undefined) return '—'; return `${Math.floor(min / 60)}時間${min % 60 ? `${min % 60}分` : ''}`; }
 export const STATUS_JA: Record<string, string> = { WORKING: '勤務中', OVERDUE: '退勤忘れ', DONE: '退勤済み', PAID_LEAVE: '有給全休', PAID_LEAVE_AM: '有給午前半休', PAID_LEAVE_PM: '有給午後半休' };
+/** ISO 日時 → JST 'YYYY-MM-DD HH:MM' */
+export function fmtTs(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const j = new Date(d.getTime() + 9 * 3600e3);
+  return `${j.getUTCFullYear()}-${pad2(j.getUTCMonth() + 1)}-${pad2(j.getUTCDate())} ${pad2(j.getUTCHours())}:${pad2(j.getUTCMinutes())}`;
+}
+export const LEAVE_JA: Record<string, string> = { full: '全休', am: '午前半休', pm: '午後半休' };
