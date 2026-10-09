@@ -1,0 +1,23 @@
+[Unit]
+Description=だいずスマイルファクトリー タイムカード
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=daizu
+Group=daizu
+WorkingDirectory=/opt/daizu-timecard
+EnvironmentFile=/opt/daizu-timecard/.env
+Environment=TZ=Asia/Tokyo
+ExecStart=/usr/bin/node dist/server/index.js
+Restart=always
+RestartSec=3
+# 安全側の設定
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/daizu-timecard /opt/daizu-timecard
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+# https は Caddy が自動で証明書を取る（Let's Encrypt）。DNS で __DOMAIN__ がこの VPS を向いていること
+__DOMAIN__ {
+    encode gzip
+    reverse_proxy 127.0.0.1:3000
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=31536000"
+    }
+}
