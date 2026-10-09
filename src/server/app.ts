@@ -20,7 +20,7 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   const app = Fastify({ logger: opts.logger ?? true, trustProxy: true, bodyLimit: 256 * 1024 });
 
   await app.register(cookie, { secret: config.sessionSecret || 'dev-only-secret-change-me-0123456789' });
-  await app.register(rateLimit, { global: true, max: 240, timeWindow: '1 minute', keyGenerator: (req) => req.ip });
+  await app.register(rateLimit, { global: true, max: config.rateLimitMax, timeWindow: '1 minute', keyGenerator: (req) => req.ip });
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof AppError) {

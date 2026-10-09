@@ -291,8 +291,8 @@ describe('本人修正の期限（当月、および翌月7日までの前月分
     expect(selfEditable('2025-12-15', '2026-01-05')).toBe(true);
     expect(selfEditable('2025-12-15', '2026-01-08')).toBe(false);
   });
-  it('未来月は不可、日付不正は不可', () => {
-    expect(selfEditable('2026-11-01', '2026-10-09')).toBe(false);
+  it('未来月は可（先に出した有給の取消）、日付不正は不可', () => {
+    expect(selfEditable('2026-11-01', '2026-10-09')).toBe(true);
     expect(selfEditable('2026-02-30', '2026-03-01')).toBe(false);
   });
   it('期限日は翌月7日', () => {

@@ -18,7 +18,7 @@
 | 4〜5 並行運用・切替 | 手順は §5 に記載 | 未 |
 | 6 早めの機能 | PINリセット／退勤忘れリマインド／出勤報告メール／大吉 LINE WORKS／お知らせ／従業員リスト連携 | **未実装**（テーブルと設定項目だけ用意） |
 
-自動テスト：**112件 全 PASS**（`npm test`）。
+自動テスト：**115件 全 PASS**（`npm test`）。実装後に別のレビュー担当（この作業を見ていない AI）に全コードを点検させ、指摘 11件（管理画面から退勤忘れを締められない／翌月の有給を本人が取り消せない／起動PINロックの抜け道／導入直後の給与メール誤送信 など）をすべて修正し、再発防止のテストを追加済み。
 
 ---
 
@@ -113,9 +113,9 @@
 ### 4.4 起動PIN と送信先を設定（VPS のコンソールで）
 ```bash
 cd /opt/daizu-timecard
-sudo -u daizu npm run cli -- set-gate-pin 1234
-sudo -u daizu npm run cli -- set-setting payroll_notify_emails yamato@daizu.info
-sudo -u daizu npm run cli -- set-setting admin_notify_emails yamato@daizu.info
+sudo -u daizu -H npm run cli -- set-gate-pin 1234
+sudo -u daizu -H npm run cli -- set-setting payroll_notify_emails yamato@daizu.info
+sudo -u daizu -H npm run cli -- set-setting admin_notify_emails yamato@daizu.info
 ```
 （`1234` は実際の起動PINに置き換え。あとから管理画面の「設定」タブでも変えられます）
 
@@ -168,16 +168,16 @@ Google Workspace（daizu.info の Gmail）を使う場合：
 ### 5.3 取り込む（まず確認だけ → 本番）
 ```bash
 cd /opt/daizu-timecard
-sudo -u daizu npm run import:legacy -- --staff /tmp/staff.csv --locations /tmp/locations.csv --attendance /tmp/attendance.csv --dry-run
+sudo -u daizu -H npm run import:legacy -- --staff /tmp/staff.csv --locations /tmp/locations.csv --attendance /tmp/attendance.csv --dry-run
 ```
 「スキップ」「注意」を読んで、必要なら CSV を直して再実行。問題なければ `--dry-run` を外して実行（何度実行しても重複しません）。
 その後、管理画面「事業所」で **事業部・GHフラグ**を確認してください（名前から自動で初期化しています）。
 
 ### 5.4 給与CSV の検算（旧と全列一致）
 ```bash
-sudo -u daizu npm run cli -- payroll 2026-07 /tmp/check/2026-07
-sudo -u daizu npm run cli -- payroll 2026-08 /tmp/check/2026-08
-sudo -u daizu npm run cli -- payroll 2026-09 /tmp/check/2026-09
+sudo -u daizu -H npm run cli -- payroll 2026-07 /tmp/check/2026-07
+sudo -u daizu -H npm run cli -- payroll 2026-08 /tmp/check/2026-08
+sudo -u daizu -H npm run cli -- payroll 2026-09 /tmp/check/2026-09
 ```
 旧システムが送った `給与集計_YYYY-MM.csv` 等（メールの添付）と、上で出た 3 ファイルを Excel で開いて比べる。**全スタッフ・全列が一致**すれば合格。違いがあれば私に 2 つのファイルを送ってください（原因を調べます）。
 
@@ -201,6 +201,7 @@ sudo -u daizu npm run cli -- payroll 2026-09 /tmp/check/2026-09
 | 給与CSVを今すぐ出す | 管理画面 → 給与データ → 対象月 → ①②③ を押す（ダウンロード）／「メールで送信」 |
 | 送信先・単価を変える | 管理画面 → 設定 |
 | 定期処理が動いたか見る | 管理画面 → 定期処理・ログ（失敗はメールでも通知） |
+| 給与の自動送信 | 毎月8日 7時台（8〜10日の間にサーバーが止まっていても復帰後に1回だけ）。**導入直後の最初の月は自動送信しない**（旧システムと二重になるため）ので、並行運用中は「給与データ」から手動送信 |
 | バックアップから戻す | `deploy/backup-restore.md` |
 | サーバーの状態 | `sudo systemctl status daizu-timecard` ／ ログ `sudo journalctl -u daizu-timecard -n 100` |
 
@@ -215,7 +216,7 @@ npm run migrate          # DB 作成
 npm run seed:dev         # 開発用サンプル（起動PIN 7777・スタッフPIN 0000 等）
 npm run dev:server       # http://localhost:3000（dist/web をビルド済みなら画面も出る）
 npm run build            # 画面＋サーバー
-npm test                 # 112件（PostgreSQL が必要：DATABASE_URL_TEST）
+npm test                 # 115件（PostgreSQL が必要：DATABASE_URL_TEST）
 npm run shots            # Playwright で 390px/1280px のスクリーンショット（/tmp/shots）
 ```
 - `src/calc/` は I/O なし。給与に関わる変更は必ずテストを足し、旧→新で同じ出力になる証跡を残す

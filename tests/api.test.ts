@@ -60,6 +60,7 @@ async function adminClient(): Promise<Client> {
 }
 async function kioskClient(pin = '7777'): Promise<Client> {
   const c = new Client(app);
+  await c.get('/api/kiosk/gate/status');
   const r = await c.post('/api/kiosk/gate', { pin });
   expect(r.status, JSON.stringify(r.body)).toBe(200);
   return c;
@@ -87,6 +88,7 @@ describe('権限：起動PIN・管理ログイン', () => {
   });
   it('M12 起動PIN：5回失敗でその端末だけ5分ロック。正しいPINなら通る', async () => {
     const c = new Client(app);
+    await c.get('/api/kiosk/gate/status'); // 画面と同じ順序（端末 Cookie を受け取る）
     for (let i = 1; i <= 5; i++) {
       const r = await c.post('/api/kiosk/gate', { pin: '0001' });
       expect(r.status).toBe(401);
@@ -96,7 +98,14 @@ describe('権限：起動PIN・管理ログイン', () => {
     expect(locked.body.code).toBe('GATE_LOCKED');
     // 別の端末は影響なし
     const other = new Client(app);
+    await other.get('/api/kiosk/gate/status');
     expect((await other.post('/api/kiosk/gate', { pin: '7777' })).status).toBe(200);
+  });
+  it('M12 Cookie を送らない相手（API 直叩き）は IP 単位でロックされる', async () => {
+    for (let i = 1; i <= 5; i++) expect((await app.inject({ method: 'POST', url: '/api/kiosk/gate', payload: { pin: '0002' } })).statusCode).toBe(401);
+    const r = await app.inject({ method: 'POST', url: '/api/kiosk/gate', payload: { pin: '7777' } });
+    expect(r.statusCode).toBe(429);
+    await q("DELETE FROM auth_failures WHERE scope = 'gate'");
   });
   it('S1 名簿に pin_hash・email が含まれない', async () => {
     const k = await kioskClient();
@@ -252,6 +261,34 @@ describe('退勤忘れ（OVERDUE）', () => {
     expect(noTime.status).toBe(400);
     expect(noTime.body.code).toBe('CLOCK_OUT_REQUIRED');
   });
+  it('定期処理前でも出勤から24時間超なら退勤時刻の手入力必須（status が WORKING のまま）', async () => {
+    const k = await kioskClient();
+    await q("UPDATE attendance SET status = 'WORKING' WHERE id = $1", [ids['att_od']]);
+    const r = await k.post('/api/kiosk/clock-out', { attendance_id: ids['att_od'] });
+    expect(r.status).toBe(400);
+    expect(r.body.code).toBe('CLOCK_OUT_REQUIRED');
+    await q("UPDATE attendance SET status = 'OVERDUE' WHERE id = $1", [ids['att_od']]);
+  });
+  it('管理者が退勤忘れを締められる（PUT status=DONE → 退勤処理と同じ計算・理由チェック）', async () => {
+    const a = await adminClient();
+    const rec = (await a.get(`/api/admin/attendance/${ids['att_od']}`)).body.record;
+    const { toMin, toHHMM, addDays } = await import('../src/calc/index.js');
+    const outMin = toMin(rec.clock_in)! + 600; // 10時間後・休憩0 → 法定不足＋8h超休憩0 の理由必須
+    const outTime = toHHMM(outMin);
+    const outDate = outMin >= 1440 ? addDays(rec.work_date, 1) : rec.work_date;
+    const needs = await a.put(`/api/admin/attendance/${ids['att_od']}`, { status: 'DONE', clock_out: outTime, clock_out_date: outDate, break_minutes: 0, correction_reason: '管理者による退勤入力' });
+    expect(needs.status).toBe(422);
+    expect(needs.body.code).toBe('NEEDS_REASON');
+    const ok = await a.put(`/api/admin/attendance/${ids['att_od']}`, { status: 'DONE', clock_out: outTime, clock_out_date: outDate, break_minutes: 60, correction_reason: '管理者による退勤入力' });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body.record.status).toBe('DONE');
+    expect(ok.body.record.work_minutes).toBe(540);
+    // テストの続き（F4）のために未退勤へ戻す
+    const back = await a.put(`/api/admin/attendance/${ids['att_od']}`, { status: 'OVERDUE', correction_reason: 'テストで戻す' });
+    expect(back.status, JSON.stringify(back.body)).toBe(200);
+    expect(back.body.record.clock_out).toBeNull();
+    expect(back.body.record.work_minutes).toBeNull();
+  });
   it('F4 OVERDUE の人が出勤 → HAS_OPEN（先に締める）。締めた後は出勤できる', async () => {
     const k = await kioskClient();
     const r = await k.post('/api/kiosk/clock-in', { staff_id: ids['suzuki'], pin: '1234', location_code: 'DK01', request_id: 'req-od2', alcohol_check: '0.00' });
@@ -360,6 +397,14 @@ describe('マイページ（本人の記録）', () => {
     const r2 = await c.post('/api/my/leave', { work_date: d, type: 'full' });
     expect(r2.status).toBe(409);
     expect(r2.body.code).toBe('LEAVE_DUPLICATE');
+    // 翌月の有給を先に申請 → 本人が取り消せる
+    const nextMonth = addDays(`${today.slice(0, 7)}-28`, 10);
+    const r3 = await c.post('/api/my/leave', { work_date: nextMonth, type: 'full', reason: '旅行' });
+    expect(r3.status, JSON.stringify(r3.body)).toBe(200);
+    const listed = (await c.get(`/api/my/records?ym=${nextMonth.slice(0, 7)}`)).body.records.find((x: { id: string }) => x.id === r3.body.record.id);
+    expect(listed.self_editable).toBe(true);
+    const r4 = await c.del(`/api/my/records/${r3.body.record.id}`);
+    expect(r4.status, JSON.stringify(r4.body)).toBe(200);
   });
   it('M6 暗証番号変更：現在のPINで本人確認', async () => {
     const k = await kioskClient();
@@ -472,6 +517,16 @@ describe('管理：スタッフ・事業所・勤怠・給与', () => {
     await q("DELETE FROM job_runs WHERE job_name = 'payroll'");
     await tick(earlier);
     expect((await q("SELECT 1 FROM job_runs WHERE job_name = 'payroll'")).length).toBe(0);
+    // 11日以降は自動では送らない（手動送信）
+    await tick(Date.UTC(y, m, 11, 7 - 9, 5));
+    expect((await q("SELECT 1 FROM job_runs WHERE job_name = 'payroll'")).length).toBe(0);
+    // 初回起動（記録なし）では前月分をスキップ扱いにして、導入直後に送らない
+    const { guardFirstBoot } = await import('../src/server/jobs.js');
+    await guardFirstBoot(sendDayMs);
+    const c0 = (await q<{ c: number }>("SELECT count(*)::int AS c FROM mail_log WHERE kind = 'payroll' AND subject LIKE '%自動送信%'"))[0]!.c;
+    await tick(sendDayMs);
+    expect((await q<{ c: number }>("SELECT count(*)::int AS c FROM mail_log WHERE kind = 'payroll' AND subject LIKE '%自動送信%'"))[0]!.c).toBe(c0);
+    expect((await q<{ detail: string }>("SELECT detail FROM job_runs WHERE job_name = 'payroll'"))[0]!.detail).toContain('初回起動');
   });
   it('バックアップ（CSV 書き出し）が動く', async () => {
     const a = await adminClient();

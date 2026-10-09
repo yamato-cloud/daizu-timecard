@@ -55,6 +55,10 @@ export const config = {
   outboxDir: env('OUTBOX_DIR', 'outbox'),
   /** 定期処理を動かすか（テスト時は false） */
   enableJobs: bool('ENABLE_JOBS', true),
+  /** 全体のレート制限（IP ごと・1分あたり）。据え置き端末が同じ回線に複数ある前提で余裕を持たせる */
+  rateLimitMax: Number(env('RATE_LIMIT_MAX', '600')),
+  /** テスト用：レート制限を無効化 */
+  rateLimitDisabled: bool('RATE_LIMIT_DISABLED', false),
   /** 公開ディレクトリ（ビルド済み画面） */
   webDir: env('WEB_DIR', 'dist/web'),
 };
@@ -66,3 +70,6 @@ export function assertConfig(): string[] {
   if (config.isProd && !config.baseUrl.startsWith('https://')) problems.push('APP_BASE_URL は https:// で始まる本番URLにしてください');
   return problems;
 }
+
+/** ルート個別のレート制限（1分あたり n 回）。テストでは無効化 */
+export const routeLimit = (n: number) => ({ rateLimit: { max: config.rateLimitDisabled ? 1_000_000 : n, timeWindow: '1 minute' } });

@@ -121,7 +121,7 @@ echo "== 6/8 ビルド =="
 cd "$APP_DIR"
 npm ci --no-audit --no-fund
 npm run build
-sudo -u "$APP_USER" npm run migrate
+sudo -u "$APP_USER" -H npm run migrate
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/dist"
 
 echo "== 7/8 systemd サービス =="
@@ -144,7 +144,7 @@ echo " 緊急ログイン用トークン（管理画面の「緊急ログイン�
 grep ADMIN_EMERGENCY_TOKEN "$APP_DIR/.env" | cut -d= -f2
 echo
 echo " 次にやること："
-echo "  1) 起動PIN を設定：  cd $APP_DIR && sudo -u $APP_USER npm run cli -- set-gate-pin 1234"
-echo "  2) 給与送信先：      cd $APP_DIR && sudo -u $APP_USER npm run cli -- set-setting payroll_notify_emails yamato@daizu.info"
+echo "  1) 起動PIN を設定：  cd $APP_DIR && sudo -u $APP_USER -H npm run cli -- set-gate-pin 1234"
+echo "  2) 給与送信先：      cd $APP_DIR && sudo -u $APP_USER -H npm run cli -- set-setting payroll_notify_emails yamato@daizu.info"
 echo "  3) ブラウザで https://$DOMAIN/admin.html を開いて緊急ログイン → スタッフ・事業所を登録（または旧データを取り込み）"
 echo "=============================================================="

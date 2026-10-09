@@ -4,11 +4,11 @@
 import type { FastifyInstance } from 'fastify';
 import { q, one, tx } from '../db.js';
 import { requireAdmin, hashPin, isValidPin } from '../auth.js';
-import { badRequest, notFound } from '../errors.js';
+import { badRequest, notFound, conflict } from '../errors.js';
 import { allSettings, setSetting, ADMIN_EDITABLE_KEYS, getSetting } from '../settings.js';
 import { audit, type Actor } from '../audit.js';
 import { listStaffAdmin, createStaff, updateStaff } from '../services/staff.js';
-import { presentRow, cancelRecord, addRecord, requestLeave, adminUpdate, getAttendance, clockIn, type AttendanceRow, type LocationRow } from '../services/attendance.js';
+import { presentRow, cancelRecord, addRecord, requestLeave, adminUpdate, getAttendance, clockIn, isUniqueViolation, type AttendanceRow, type LocationRow } from '../services/attendance.js';
 import { buildPayroll, sendPayroll } from '../services/payroll.js';
 import { mailConfigured } from '../mail.js';
 import { ymRange, mainDepartment, type WarningKey } from '../../calc/index.js';
@@ -74,7 +74,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string } }>('/attendance/:id/restore', async (req) => {
     const r = await getAttendance(req.params.id);
     if (!r || !r.deleted_at) throw notFound('取り消された記録が見つかりません');
-    const u = await one<AttendanceRow>('UPDATE attendance SET deleted_at = NULL, deleted_by = NULL, updated_at = now(), updated_by = $2 WHERE id = $1 RETURNING *', [r.id, `admin:${actorOf(req).label}`]);
+    let u: AttendanceRow | null;
+    try {
+      u = await one<AttendanceRow>('UPDATE attendance SET deleted_at = NULL, deleted_by = NULL, updated_at = now(), updated_by = $2 WHERE id = $1 RETURNING *', [r.id, `admin:${actorOf(req).label}`]);
+    } catch (e) {
+      if (isUniqueViolation(e)) throw conflict('復元できません：同じスタッフの未退勤の記録、または同じ日の有給がすでにあります', 'RESTORE_CONFLICT');
+      throw e;
+    }
     await audit(actorOf(req), 'attendance.restore', r.id, { deleted: true }, presentRow(u!));
     return { ok: true, record: presentRow(u!), message: '復元しました' };
   });

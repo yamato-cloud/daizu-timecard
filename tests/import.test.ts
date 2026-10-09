@@ -36,6 +36,8 @@ beforeAll(async () => {
     ['a5', '2026-09-06', '', 'GH01', 'GH行田', 'グループホーム', 's2', '72', '森本英里', '09:00', '12:00', '', '0', '0', '0', '0', '180', '0', 'DONE', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '1757200000000', 'TRUE', '', ''],
     ['a6', 'bad-date', '', 'GH01', 'GH行田', '', 's2', '72', '森本英里', '09:00', '12:00', '', '', '', '', '', '', '', 'DONE', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'FALSE', '', ''],
     ['a7', '2026-09-07', '', 'GH01', 'GH行田', '', 's2', '72', '森本英里', '20:00', '', '', '0', '0', '0', '0', '', '', 'WORKING', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'FALSE', '', ''],
+    // 同じ人の未退勤が2件目 → 一意制約でこの行だけスキップ（他の行は入る）
+    ['a8', '2026-09-08', '', 'GH01', 'GH行田', '', 's2', '72', '森本英里', '20:00', '', '', '0', '0', '0', '0', '', '', 'WORKING', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'FALSE', '', ''],
   ]));
 });
 afterAll(async () => { await closeDb(); });
@@ -63,7 +65,8 @@ describe('取り込み', () => {
     expect(rep.locations).toBe(3);
     expect(rep.staff).toBe(3);
     expect(rep.attendance).toBe(6);
-    expect(rep.skipped).toEqual([{ id: 'a6', reason: 'work_date を読めない: bad-date' }]);
+    expect(rep.skipped.map((x) => x.id)).toEqual(['a6', 'a8']);
+    expect(rep.skipped[1]!.reason).toContain('未退勤');
     expect(rep.warnings.some((w) => w.includes('名簿に無い'))).toBe(true);
     expect(rep.warnings.some((w) => w.includes('事業部が空'))).toBe(true);
     const rep2 = await importLegacy({ staff: `${dir}/staff.csv`, locations: `${dir}/locations.csv`, attendance: `${dir}/attendance.csv` });

@@ -160,6 +160,8 @@ export async function importLegacy(files: { staff?: string; locations?: string; 
       const leaveType = status === 'PAID_LEAVE_AM' ? 'am' : status === 'PAID_LEAVE_PM' ? 'pm' : isLeave ? 'full' : null;
       const comment = (r['staff_comment'] ?? '').trim() || null;
       const deleted = boolOf(r['_deleted'] ?? '');
+      await c.query('SAVEPOINT row_sp');
+      try {
       await c.query(
         `INSERT INTO attendance (legacy_id, work_date, staff_id, employee_id, staff_name, location_code, location_name, department, clock_in_at, clock_out_at,
            break_minutes, night_break_minutes, work_minutes, night_minutes, travel_km, travel_fee, allowance_amount, allowance_note, meal_count, meal_fee, alcohol_check,
@@ -177,7 +179,16 @@ export async function importLegacy(files: { staff?: string; locations?: string; 
           Math.round((numOrNull(r['meal_fee'] ?? '') ?? 0) / 250), Math.round(numOrNull(r['meal_fee'] ?? '') ?? 0), r['alcohol_check'] || r['photo_url'] || null,
           status, leaveType, isLeave ? (numOrNull(r['leave_days'] ?? '') ?? (status === 'PAID_LEAVE' ? 1 : 0.5)) : null, r['leave_reason'] || null, comment, comment, r['correction_reason'] || null,
           tsOrNull(r['stamped_in_at'] ?? ''), tsOrNull(r['stamped_out_at'] ?? ''), tsOrNull(r['created_at'] ?? ''), tsOrNull(r['updated_at'] ?? ''), deleted ? (tsOrNull(r['updated_at'] ?? '') ?? new Date()) : null]);
+      await c.query('RELEASE SAVEPOINT row_sp');
       report.attendance++;
+      } catch (e) {
+        await c.query('ROLLBACK TO SAVEPOINT row_sp');
+        const code = (e as { code?: string }).code;
+        const why = code === '23505'
+          ? `同じスタッフの未退勤（勤務中・退勤忘れ）が2件以上、または同じ日の有給が2件以上あります（${staffName} ${workDate}）。旧データを直してから再実行してください`
+          : `DB エラー: ${String((e as Error).message).slice(0, 160)}`;
+        report.skipped.push({ id: legacyId, reason: why });
+      }
     }
     if (dryRun) throw new DryRun();
   }).catch((e) => { if (!(e instanceof DryRun)) throw e; });

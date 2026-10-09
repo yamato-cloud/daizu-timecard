@@ -126,8 +126,8 @@ function openAdminDetail(x: Rec, reload: () => void) {
   body.append(kv);
   const actions = el('div', { class: 'mt' });
   if (x.deleted_at) {
-    const r = el('button', { type: 'button', class: 'btn', text: '復元する' });
-    r.addEventListener('click', async () => { try { await post(`/api/admin/attendance/${x.id}/restore`, {}); m.close(); toast('復元しました', 'success'); reload(); } catch (e) { toast(errorText(e), 'error'); } });
+    const r = el('button', { type: 'button', class: 'btn', text: '復元する' }) as HTMLButtonElement;
+    r.addEventListener('click', async () => { try { await busy(r, '復元中…', () => post(`/api/admin/attendance/${x.id}/restore`, {})); m.close(); toast('復元しました', 'success'); reload(); } catch (e) { toast(errorText(e), 'error'); } });
     actions.append(el('div', { class: 'notice warn', text: `取消済み（${fmtTs(x.deleted_at)}）` }), r);
   } else {
     if (x.status === 'DONE') { const e = el('button', { type: 'button', class: 'btn primary', text: '編集する' }); e.addEventListener('click', () => { m.close(); openAdminEdit(x, reload); }); actions.append(e, el('div', { class: 'mb' })); }
@@ -139,8 +139,8 @@ function openAdminDetail(x: Rec, reload: () => void) {
       actions.append(co, el('div', { class: 'mb' }), ci, el('div', { class: 'mb' }));
     }
     if (x.status.startsWith('PAID_LEAVE')) { const e = el('button', { type: 'button', class: 'btn primary', text: '有給の種別・理由を直す' }); e.addEventListener('click', () => { m.close(); openAdminLeaveEdit(x, reload); }); actions.append(e, el('div', { class: 'mb' })); }
-    const d = el('button', { type: 'button', class: 'btn danger', text: '削除（取消）する' });
-    d.addEventListener('click', async () => { const reason = prompt('削除の理由を入力してください'); if (reason === null) return; try { await del(`/api/admin/attendance/${x.id}`, { reason }); m.close(); toast('削除しました', 'success'); reload(); } catch (e) { toast(errorText(e), 'error'); } });
+    const d = el('button', { type: 'button', class: 'btn danger', text: '削除（取消）する' }) as HTMLButtonElement;
+    d.addEventListener('click', async () => { const reason = prompt('削除の理由を入力してください'); if (reason === null) return; try { await busy(d, '削除中…', () => del(`/api/admin/attendance/${x.id}`, { reason })); m.close(); toast('削除しました', 'success'); reload(); } catch (e) { toast(errorText(e), 'error'); } });
     actions.append(d);
   }
   body.append(actions);

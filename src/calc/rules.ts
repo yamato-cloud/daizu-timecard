@@ -53,14 +53,14 @@ export function statusLabelUi(s: string | null | undefined): string {
 export const SELF_CANCELABLE: readonly Status[] = ['DONE', 'PAID_LEAVE', 'PAID_LEAVE_AM', 'PAID_LEAVE_PM', 'WORKING', 'OVERDUE'];
 
 /**
- * 本人による修正・取消の期限：当月分、および翌月7日までの前月分。
+ * 本人による修正・取消の期限：当月分（および未来の分）、および翌月7日までの前月分。
  * @param workDate 'YYYY-MM-DD' @param today 'YYYY-MM-DD'（JST）
  */
 export function selfEditable(workDate: string, today: string): boolean {
   if (!isValidDate(workDate) || !isValidDate(today)) return false;
   const ym = ymOf(workDate);
   const tym = ymOf(today);
-  if (ym === tym) return true;
+  if (ym >= tym) return true; // 当月・未来月（先に申請した有給の取消など）
   const prev = ymOf(addDays(`${tym}-01`, -1));
   return ym === prev && Number(today.slice(8, 10)) <= 7;
 }

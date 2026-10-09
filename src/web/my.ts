@@ -204,16 +204,23 @@ function renderPinChange() {
   const body = el('div');
   app.append(el('div', { class: 'card' }, body));
   const step1 = () => { body.innerHTML = ''; body.append(el('p', { class: 'muted', text: '自分の名前を選んでください' }), staffPicker(step2)); };
-  const step2 = (s: Staff) => {
+  const err = el('div', { class: 'notice danger hidden', role: 'alert' });
+  const showErr = (msg: string) => { err.textContent = msg; err.classList.remove('hidden'); };
+  const step2 = (s: Staff, message?: string) => {
     body.innerHTML = '';
-    const err = el('div', { class: 'notice danger hidden', role: 'alert' });
+    err.classList.add('hidden');
+    if (message) showErr(message);
     let current = '';
     const padNew = pinPad(async (np) => {
       try { const r = await post<{ message: string }>('/api/my/pin', { staff_id: s.id, current_pin: current, new_pin: np }); toast(r.message, 'success'); location.href = '/'; }
-      catch (e) { err.textContent = errorText(e); err.classList.remove('hidden'); padNew.reset(); if (isApiFailure(e) && e.info.code !== 'BAD_PIN') { current = ''; step2(s); setTimeout(() => { err.textContent = errorText(e); err.classList.remove('hidden'); }, 0); } }
+      catch (e) {
+        padNew.reset();
+        // 現在のPINが違う等 → 現在のPIN入力からやり直し（理由は表示したまま）。新PINの形式エラーはその場で
+        if (isApiFailure(e) && e.info.code !== 'BAD_PIN') step2(s, errorText(e)); else showErr(errorText(e));
+      }
     }, { label: '新しい暗証番号（4桁）' });
-    const padCur = pinPad((p) => { current = p; body.innerHTML = ''; body.append(el('h2', { text: s.staff_name }), err, padNew.root); padNew.focus(); }, { label: '現在の暗証番号（4桁）' });
-    body.append(el('h2', { text: s.staff_name }), err, padCur.root, el('button', { type: 'button', class: 'btn ghost', text: '← 名前を選び直す', onclick: step1 }));
+    const padCur = pinPad((p) => { current = p; body.innerHTML = ''; err.classList.add('hidden'); body.append(el('h2', { text: s.staff_name }), err, padNew.root); padNew.focus(); }, { label: '現在の暗証番号（4桁）' });
+    body.append(el('h2', { text: s.staff_name }), err, padCur.root, el('button', { type: 'button', class: 'btn ghost', text: '← 名前を選び直す', onclick: () => step1() }));
     padCur.focus();
   };
   step1();

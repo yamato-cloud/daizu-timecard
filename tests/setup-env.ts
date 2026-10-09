@@ -9,3 +9,5 @@ process.env['OUTBOX_DIR'] = '/tmp/daizu-timecard-test-outbox';
 process.env['BACKUP_DIR'] = '/tmp/daizu-timecard-test-backups';
 process.env['SMTP_HOST'] = '';
 process.env['GOOGLE_CLIENT_ID'] = '';
+process.env['RATE_LIMIT_MAX'] = '100000';
+process.env['RATE_LIMIT_DISABLED'] = '1';

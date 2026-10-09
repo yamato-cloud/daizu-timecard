@@ -103,14 +103,17 @@ export const GATE_MAX_FAILS = 5;
 export const GATE_LOCK_MS = 5 * 60e3;
 const DEVICE_COOKIE = 'dsf_device';
 
-/** 端末識別子（Cookie）。無ければ発行。安全装置は Cookie が拒否されても動くよう IP を併用 */
+/**
+ * 端末識別子（Cookie）。無ければ発行する。
+ * ロックの単位：Cookie を持つ端末は「その端末だけ」。Cookie を送ってこない相手（Cookie 拒否・API 直叩き）は
+ * 毎回別端末になってロックが効かないので、その場合は IP 単位でロックする（安全装置を Cookie の保存に依存させない）。
+ */
 export function deviceKey(req: FastifyRequest, reply: FastifyReply): string {
-  let id = req.cookies[DEVICE_COOKIE];
-  if (!id || !/^[A-Za-z0-9_-]{16,64}$/.test(id)) {
-    id = randomBytes(18).toString('base64url');
-    reply.setCookie(DEVICE_COOKIE, id, { path: '/', httpOnly: true, sameSite: 'lax', secure: config.isProd, maxAge: 400 * 24 * 3600 });
-  }
-  return `${id}@${req.ip}`;
+  const id = req.cookies[DEVICE_COOKIE];
+  if (id && /^[A-Za-z0-9_-]{16,64}$/.test(id)) return `dev:${id}`;
+  const fresh = randomBytes(18).toString('base64url');
+  reply.setCookie(DEVICE_COOKIE, fresh, { path: '/', httpOnly: true, sameSite: 'lax', secure: config.isProd, maxAge: 400 * 24 * 3600 });
+  return `ip:${req.ip}`;
 }
 
 export async function checkGateLock(scope: 'gate' | 'admin', key: string): Promise<void> {

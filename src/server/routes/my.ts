@@ -4,6 +4,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { APP_VERSION } from '../config.js';
+import { routeLimit } from '../config.js';
 import { requireKiosk, requireStaff, createSession, destroySession } from '../auth.js';
 import { badRequest } from '../errors.js';
 import { roster, verifyStaffPin, changePin } from '../services/staff.js';
@@ -21,7 +22,7 @@ export async function myRoutes(app: FastifyInstance): Promise<void> {
     return { version: APP_VERSION, staff: await roster(), locations: await locationsPublic(), server_time: new Date().toISOString() };
   });
 
-  app.post<{ Body: { staff_id?: string; pin?: string } }>('/login', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
+  app.post<{ Body: { staff_id?: string; pin?: string } }>('/login', { config: routeLimit(60) }, async (req, reply) => {
     await requireKiosk(req, reply);
     const b = req.body ?? {};
     if (!b.staff_id) throw badRequest('氏名を選んでください', 'STAFF_REQUIRED', 'staff_id');
@@ -89,7 +90,7 @@ export async function myRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** 暗証番号変更（ログイン不要：氏名＋現在のPINで本人確認） */
-  app.post<{ Body: { staff_id?: string; current_pin?: string; new_pin?: string } }>('/pin', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+  app.post<{ Body: { staff_id?: string; current_pin?: string; new_pin?: string } }>('/pin', { config: routeLimit(30) }, async (req, reply) => {
     await requireKiosk(req, reply);
     const b = req.body ?? {};
     if (!b.staff_id) throw badRequest('氏名を選んでください', 'STAFF_REQUIRED', 'staff_id');

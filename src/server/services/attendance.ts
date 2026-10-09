@@ -198,7 +198,8 @@ export async function clockOut(input: ClockOutInput, actor: Actor, nowMs = Date.
     let clockOut = String(input.clock_out ?? '').trim();
     let clockOutDate = String(input.clock_out_date ?? '').trim();
     if (!clockOut) {
-      if (row.status === 'OVERDUE') throw badRequest('退勤忘れのため、退勤した時刻を入力してください', 'CLOCK_OUT_REQUIRED', 'clock_out');
+      // 退勤忘れ（status が OVERDUE、または定期処理前でも出勤から24時間超）は時刻の手入力必須
+      if (row.status === 'OVERDUE' || isOverdueAt(row.clock_in_at.getTime(), nowMs)) throw badRequest('出勤から24時間を超えているため、実際に退勤した時刻を入力してください', 'CLOCK_OUT_REQUIRED', 'clock_out');
       const nowJ = msToJst(nowMs);
       clockOut = nowJ.time;
       clockOutDate = nowJ.date;
@@ -220,7 +221,7 @@ export async function clockOut(input: ClockOutInput, actor: Actor, nowMs = Date.
       `UPDATE attendance SET clock_in_at=$2, clock_out_at=$3, break_minutes=$4, night_break_minutes=$5, work_minutes=$6, night_minutes=$7,
          travel_km=$8, travel_fee=$9, allowance_amount=$10, allowance_note=$11, meal_count=$12, meal_fee=$13, status='DONE',
          staff_comment=$14, break_reason=$15, gh_break_reason=$16, stamp_warning_reason=$17, break_excess_reason=$18, break_mismatch_reason=$19,
-         warning_labels=$20, stamped_out_at=COALESCE(stamped_out_at, $21), correction_reason=COALESCE($22, correction_reason), updated_at=now(), updated_by=$23
+         warning_labels=$20, stamped_out_at=COALESCE(stamped_out_at, $21), correction_reason=COALESCE($22, correction_reason), legacy_comment=NULL, updated_at=now(), updated_by=$23
        WHERE id=$1 RETURNING *`,
       [row.id, clockInAt, clockOutAt, calc.break_minutes, calc.night_break_minutes, calc.work_minutes, calc.night_minutes,
         calc.travel_km, calc.travel_fee, calc.allowance_amount, calc.allowance_note || null, calc.meal_count, calc.meal_fee,
@@ -441,8 +442,17 @@ export async function adminUpdate(id: string, input: AdminUpdateInput, actor: Ac
       return after;
     });
   }
+  if (isOpenStatus(row.status) && targetStatus === 'DONE') {
+    // 勤務中・退勤忘れを管理者が締める：退勤処理と同じ計算・警告（理由）を通す
+    return clockOut({
+      attendance_id: id, clock_out: input.clock_out ?? null, clock_out_date: input.clock_out_date ?? null, clock_in_fix: input.clock_in ?? null,
+      break_minutes: input.break_minutes ?? null, night_break_minutes: input.night_break_minutes ?? null, travel_km: input.travel_km ?? null,
+      comment: input.comment === undefined ? row.staff_comment : input.comment, allowance_amount: input.allowance_amount ?? null, allowance_note: input.allowance_note === undefined ? null : input.allowance_note,
+      meal_count: input.meal_count ?? null, reasons: input.reasons ?? {}, correction_reason: input.correction_reason,
+    }, actor, nowMs);
+  }
   if (isOpenStatus(targetStatus)) {
-    // 勤務中・退勤忘れ：出勤日時・事業所の訂正のみ
+    // 勤務中・退勤忘れ：出勤日時・事業所の訂正のみ（退勤済みから戻す場合は退勤側の値を消す）
     const workDate = input.work_date ?? row.work_date;
     const ci = input.clock_in ?? (row.clock_in_at ? msToJst(row.clock_in_at.getTime()).time : null);
     if (!isValidDate(workDate) || !ci || toMin(ci) === null) throw badRequest('出勤日時の形式が不正です', 'BAD_TIME', 'clock_in');
@@ -450,9 +460,13 @@ export async function adminUpdate(id: string, input: AdminUpdateInput, actor: Ac
     if (input.location_code && !loc) throw badRequest('事業所が見つかりません', 'BAD_LOCATION');
     return tx(async (c) => {
       const before = presentRow(row);
-      const updated = await one<AttendanceRow>(
-        `UPDATE attendance SET work_date=$2, clock_in_at=$3, status=$4, location_code=COALESCE($5, location_code), location_name=COALESCE($6, location_name), department=COALESCE($7, department), alcohol_check=COALESCE($8, alcohol_check), correction_reason=$9, updated_at=now(), updated_by=$10 WHERE id=$1 RETURNING *`,
+      let updated: AttendanceRow | null;
+      try {
+      updated = await one<AttendanceRow>(
+        `UPDATE attendance SET work_date=$2, clock_in_at=$3, status=$4, location_code=COALESCE($5, location_code), location_name=COALESCE($6, location_name), department=COALESCE($7, department), alcohol_check=COALESCE($8, alcohol_check), correction_reason=$9,
+           clock_out_at=NULL, work_minutes=NULL, night_minutes=NULL, stamped_out_at=NULL, updated_at=now(), updated_by=$10 WHERE id=$1 RETURNING *`,
         [id, workDate, new Date(jstToMs(workDate, ci)!), targetStatus, loc?.location_code ?? null, loc?.location_name ?? null, loc?.department ?? null, input.alcohol_check ?? null, input.correction_reason.trim(), actorStr(actor)], c);
+      } catch (e) { if (isUniqueViolation(e)) throw conflict('このスタッフには別の未退勤（勤務中・退勤忘れ）の記録があります。先にそちらを締めてください', 'HAS_OPEN'); throw e; }
       const after = presentRow(updated!);
       await audit(actor, 'attendance.admin_update', id, before, after, c);
       return after;

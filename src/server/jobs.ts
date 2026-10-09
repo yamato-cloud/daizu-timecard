@@ -34,11 +34,12 @@ export const JOBS: JobDef[] = [
   {
     name: 'payroll', description: '前月分の給与CSV 3種をメール送信（毎月8日 7時台）', retryMinutes: RETRY_DEFAULT,
     due: async (n) => {
+      // 送信日の送信時以降に1回。サーバー停止などで送れなかった場合は送信日から2日以内なら遅れて送る。それ以降は手動送信
       const day = await getNumberSetting('payroll_send_day', 8);
       const hour = await getNumberSetting('payroll_send_hour', 7);
       const d = Number(n.date.slice(8, 10));
       const h = Number(n.time.slice(0, 2));
-      if (d < day || (d === day && h < hour)) return null;
+      if (d < day || d > day + 2 || (d === day && h < hour)) return null;
       return prevYm(n.date.slice(0, 7));
     },
     run: async () => {
@@ -117,7 +118,18 @@ export async function jobStatus(): Promise<Array<{ name: string; description: st
   return out;
 }
 
+/**
+ * 初回起動（job_runs に給与送信の記録が1件も無い）では、導入直後に前月分の給与メールを自動送信しない。
+ * 並行運用中は旧システムも送るため二重になる（引継書 §12.2）。初回は管理画面から手動送信する。
+ */
+export async function guardFirstBoot(nowMs = Date.now()): Promise<void> {
+  const any = await one("SELECT 1 FROM job_runs WHERE job_name = 'payroll'");
+  if (any) return;
+  const ym = prevYm(msToJst(nowMs).date.slice(0, 7));
+  await q('INSERT INTO job_runs (job_name, period_key, started_at, finished_at, ok, detail) VALUES ($1,$2,now(),now(),true,$3) ON CONFLICT DO NOTHING', ['payroll', ym, '初回起動のため自動送信をスキップ（必要なら管理画面から手動送信）']);
+}
+
 export function startScheduler(): void {
   cron.schedule('* * * * *', () => { tick().catch((e) => console.error('[jobs] tick failed', e)); });
-  tick().catch((e) => console.error('[jobs] initial tick failed', e));
+  guardFirstBoot().then(() => tick()).catch((e) => console.error('[jobs] initial tick failed', e));
 }

@@ -4,6 +4,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { APP_VERSION } from '../config.js';
+import { routeLimit } from '../config.js';
 import { q } from '../db.js';
 import { requireKiosk, deviceKey, checkGateLock, recordFailure, clearFailures, verifyGatePin, createSession, isValidPin, GATE_MAX_FAILS } from '../auth.js';
 import { badRequest, unauthorized } from '../errors.js';
@@ -21,7 +22,7 @@ export async function locationsPublic(): Promise<Array<Pick<LocationRow, 'locati
 
 export async function kioskRoutes(app: FastifyInstance): Promise<void> {
   /** 起動PIN：その端末だけ・5回失敗で5分ロック */
-  app.post<{ Body: { pin?: string } }>('/gate', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+  app.post<{ Body: { pin?: string } }>('/gate', { config: routeLimit(30) }, async (req, reply) => {
     const key = deviceKey(req, reply);
     await checkGateLock('gate', key);
     const pin = String(req.body?.pin ?? '');
@@ -35,13 +36,14 @@ export async function kioskRoutes(app: FastifyInstance): Promise<void> {
     }
     await clearFailures('gate', key);
     const ver = await getSetting('site_gate_version', '1');
-    const deviceId = key.split('@')[0]!;
+    const deviceId = key.startsWith('dev:') ? key.slice(4) : `ip-${req.ip}`;
     await createSession('kiosk', deviceId, null, { gate_version: ver, ua: String(req.headers['user-agent'] ?? '').slice(0, 200) }, reply);
     await audit(kioskActor(deviceId, req.ip), 'gate.pass', null, null, null);
     return { ok: true };
   });
 
   app.get('/gate/status', async (req, reply) => {
+    deviceKey(req, reply); // 端末識別 Cookie をここで発行しておく（PIN 入力前に端末が確定する）
     const configured = !!(await getSetting('site_gate_pin_hash', ''));
     try { await requireKiosk(req, reply); return { passed: true, configured }; } catch { return { passed: false, configured }; }
   });

@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { randomBytes } from 'node:crypto';
 import { config } from '../config.js';
+import { routeLimit } from '../config.js';
 import { createSession, destroySession, readSession, isAdminEmail, assertEmergencyToken, checkGateLock, recordFailure, clearFailures } from '../auth.js';
 import { forbidden } from '../errors.js';
 import { audit } from '../audit.js';
@@ -68,7 +69,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** 緊急ログイン（Google が使えないとき）。環境変数 ADMIN_EMERGENCY_TOKEN と一致した場合のみ */
-  app.post<{ Body: { token?: string; email?: string } }>('/emergency', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
+  app.post<{ Body: { token?: string; email?: string } }>('/emergency', { config: routeLimit(20) }, async (req, reply) => {
     const key = req.ip;
     await checkGateLock('admin', key);
     try {
