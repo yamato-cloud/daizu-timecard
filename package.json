@@ -1,0 +1,29 @@
+{
+  "name": "daizu-timecard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "だいずスマイルファクトリー タイムカード（再構築版）",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:web": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "npm run build:web && npm run build:server",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:web": "vite",
+    "start": "node dist/server/index.js",
+    "migrate": "tsx src/server/migrate.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.4",
+    "vitest": "^3.2.7"
+  }
+}
